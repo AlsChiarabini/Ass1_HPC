@@ -6,7 +6,6 @@ atac.c large -> 0.3668 ms
 atac.c extra large(10k) -> 0.6 ms
 atac.c extra large(20k) -> 2.74 ms
 
-
 **#pragma omp parallel for**
 atac.c mini -> 0.000013 ms
 atac.c small -> 0.001298 ms 
@@ -17,11 +16,18 @@ atac.c extra large(20k) -> 2.889629 ms
 
 **Changing access path in second for in order to make advantage
 of locality + reduction**
-atac.c mini -> 0.00002 ms
-atac.c small -> 0.00039 ms
-atac.c standard -> 0.036 ms
-atac.c large -> 0.1531 ms
-atac.c extra large(10k) -> 0.247 ms 
-atac.c extra large(20k) -> 1.267 ms
+atac.c mini -> 0.000044 ms
+atac.c small -> 0.00054 ms
+atac.c standard -> 0.052 ms
+atac.c large -> 0.22 ms
+atac.c extra large(10k) -> 0.29 ms 
+atac.c extra large(20k) -> 1.70 ms
 
+**Using tiling + previous optimizations**
+atac.c mini ->  0.000016 ms 
+atac.c small -> 0.0015 ms
+atac.c standard -> 0.04 ms
+atac.c large -> 0.17 ms
+atac.c extra large(10k) -> 0.35 ms 
+atac.c extra large(20k) -> 1.27  ms
 
