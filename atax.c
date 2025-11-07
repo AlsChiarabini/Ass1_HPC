@@ -49,21 +49,46 @@ static void kernel_atax(int nx, int ny,
                         DATA_TYPE POLYBENCH_1D(y, NY, ny),
                         DATA_TYPE POLYBENCH_1D(tmp, NX, nx))
 {
+    int i, j;
 
-  // PARLLELIZZARE QUESTO CODICE, dipendenze, access pattern, trasposta a block forse
+    // tmp_i calcolo
+    #pragma omp parallel for private(i,j) schedule(static)
+    for (i = 0; i < _PB_NX; i++)
+    {
+        DATA_TYPE tmp_i = 0.0;
 
-  int i, j;
+        #pragma omp simd reduction(+:tmp_i)
+        for (j = 0; j < _PB_NY; j++)
+            tmp_i += A[i][j] * x[j];
+        tmp[i] = tmp_i;
+    }
 
-  for (i = 0; i < _PB_NY; i++)
-    y[i] = 0;
-  for (i = 0; i < _PB_NX; i++)
-  {
-    tmp[i] = 0;
+    // inizializza y a zero
     for (j = 0; j < _PB_NY; j++)
-      tmp[i] = tmp[i] + A[i][j] * x[j];
-    for (j = 0; j < _PB_NY; j++)
-      y[j] = y[j] + A[i][j] * tmp[i];
-  }
+        y[j] = 0.0;
+
+    // aggiornamento y in parallelo: loop esterno su i, riduzione su y via privati
+    #pragma omp parallel
+    {
+        DATA_TYPE y_private[_PB_NY];
+        for (j = 0; j < _PB_NY; j++)
+            y_private[j] = 0.0;
+
+        #pragma omp for schedule(static)
+        for (i = 0; i < _PB_NX; i++)
+        {
+            DATA_TYPE tmp_i = tmp[i];
+            for (j = 0; j < _PB_NY; j++)
+                y_private[j] += A[i][j] * tmp_i;
+        }
+
+        // somma i privati in y globale
+        #pragma omp critical
+        {
+            for (j = 0; j < _PB_NY; j++)
+                y[j] += y_private[j];
+        }
+    }
 }
 
 int main(int argc, char **argv)
@@ -108,4 +133,6 @@ int main(int argc, char **argv)
   return 0;
 }
 
-// Polybanch nel comando per mettere il tempo
+// Polybench nel comando per mettere il tempo
+// make EXT_CFLAGS='-DMINI_DATASET -DPOLYBENCH_TIME -pg' clean all run
+// gcc per non inlineare oppure non 02 ma O0 (no optimizations, piu lento)

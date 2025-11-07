@@ -30,8 +30,8 @@
 #  endif
 
 #  ifdef EXTRALARGE_DATASET
-#   define NX 100000
-#   define NY 100000
+#   define NX 20000
+#   define NY 20000
 #  endif
 # endif /* !N */
 
