@@ -1,0 +1,31 @@
+https://github.com/salor02/assignment-HPC/blob/main/assignment-1/OpenMP/linear-algebra/kernels/atax/atax.c
+
+========== teoria =========
+
+
+Versione originale 
+
+PRO:
+Accesso raw-major per creare tmp, ok
+
+CONTRO:
+Seriale 
+y eseguito nx volte per ogni y[i], questo porta ad avere accessi ripetuti non contigui alla cache
+→ cache miss (soprattutto con NY grande)
+→ Brutta temporal locality di y
+→ nessuna vettorizzazione
+→ possibile data race se parallelizziamo y senza controlli ulteriori
+→ quando aggiorno y, essendo A trasposta, entro per colonna, pessimo data locality. 
+
+Versione ottimizzata 
+
+PRO: 
+il loop esterno su i è parallelizzato, quindi ogni thread calcola una diversa riga del ciclo. 
+ogni thread scrive nel suo my_i, quindi nessuna race condition per tmp[i].
+Il loop su j è vettorizzato (= È un livello di parallelismo interno al core, complementare all’OpenMP che invece usa più core.)
+Riduzione su y, in modo che ognuno veda il suo vettore my_y (problema però quando NY grande) e non ci siano race condition. Faccio poi la riduzione con una sezione critical
+
+CONTRO: 
+Critical potrebbe diventare bottleneck se NX piccolo e NY grande, potrei usare riduzione 
+y_private è su stack, potrebbe causare overflow, si potrebbe fare allocazione dinamica con malloc, oppure tiling
+Per il prodotto finale, sarebbe meglio usare tiling
