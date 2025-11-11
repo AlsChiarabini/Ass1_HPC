@@ -51,8 +51,151 @@ static void kernel_atax(int nx, int ny,
 {
     int i, j;
 
-    // tmp_i calcolo
-    #pragma omp parallel for private(i,j) schedule(static)
+    #if defined SEQUENTIAL
+    // Inizializza l'array y a zero
+    for (i = 0; i < _PB_NY; i++)
+      y[i] = 0;
+
+    // Calcola il prodotto matrice-vettore: A * x
+    // tmp[i] conterrà il risultato della moltiplicazione della riga i della matrice A per il vettore x
+    for (i = 0; i < _PB_NX; i++) // Ciclo sulle righe della matrice A
+    {
+      tmp[i] = 0;                         // Inizializza tmp[i] a zero
+      for (j = 0; j < _PB_NY; j++)        // Ciclo sulle colonne della matrice A (lunghezza di x)
+        tmp[i] = tmp[i] + A[i][j] * x[j]; // Somma il prodotto A[i][j] * x[j] nel vettore tmp[i]
+
+      // Ora aggiorna il vettore y con il risultato della moltiplicazione riga di A * tmp
+      for (j = 0; j < _PB_NY; j++)
+        y[j] = y[j] + A[i][j] * tmp[i]; // Somma il prodotto A[i][j] * tmp[i] nel vettore y
+    }
+
+    #elif defined PARALLEL
+    // Inizializza l'array y a zero
+    #pragma omp parallel for
+      for (int i = 0; i < _PB_NY; i++)
+        y[i] = 0;
+
+    // Calcolo parallelo di tmp[i]
+    #pragma omp parallel for
+      for (int i = 0; i < _PB_NX; i++)
+      {
+        tmp[i] = 0;
+        for (int j = 0; j < _PB_NY; j++)
+          tmp[i] = tmp[i] + A[i][j] * x[j];
+      }
+
+    // Aggiornamento parallelo di y[j] DA NOTARE IL CAMBIO DI VARIABILI D'ITERAZIONE
+    #pragma omp parallel for
+      for (int j = 0; j < _PB_NY; j++)
+      {
+        for (int i = 0; i < _PB_NX; i++)
+          y[j] = y[j] + A[i][j] * tmp[i];
+      }
+
+    #elif defined PARALLEL_NORACE
+    // Inizializza y a zero
+    #pragma omp parallel for
+    for (int i = 0; i < _PB_NY; i++)
+      y[i] = 0;
+
+    // Calcolo parallelo di tmp[i]
+    #pragma omp parallel for
+    for (int i = 0; i < _PB_NX; i++) 
+    {
+      tmp[i] = 0;
+      for (int j = 0; j < _PB_NY; j++)
+        tmp[i] += A[i][j] * x[j];
+    }
+
+    // Calcolo parallelo di y[j], evitando la race con y_private
+    #pragma omp parallel
+    {
+      double y_private[_PB_NY];
+      for (int j = 0; j < _PB_NY; j++)
+        y_private[j] = 0;                 // --> diamo y_private a ogni thread per evitare race condition
+
+      #pragma omp for
+      for (int i = 0; i < _PB_NX; i++)
+        for (int j = 0; j < _PB_NY; j++)
+          y_private[j] += A[i][j] * tmp[i];     // ogni thread aggiorna il proprio y_private in parallelo, calcolo locale
+                                                // Accesso alla matrice A in modo più efficiente (per righe)
+                                                // y_private usato spesso, quindi bene per la cache
+
+      // Riduzione manuale di y_private in y globale
+      #pragma omp critical
+      {
+        for (int j = 0; j < _PB_NY; j++)
+          y[j] += y_private[j];        // somma i privati in y globale, sequenziale (bad)
+      }
+    }
+
+    #elif defined REDUCTION
+    // Inizializza l'array y a zero
+    #pragma omp parallel for
+      for (i = 0; i < _PB_NY; i++)
+        y[i] = 0;
+
+    #pragma omp parallel for reduction(+:tmp[:_PB_NX]) //forse ridondante, ogni tmp[i] e' indipendente
+    for (int i = 0; i < _PB_NX; i++) {
+        for (int j = 0; j < _PB_NY; j++) {
+            tmp[i] += A[i][j] * x[j]; // Accumulate directly into tmp[i]
+        }
+    }
+    #pragma omp parallel for reduction(+:y[:_PB_NY])
+    for (int j = 0; j < _PB_NY; j++) {
+        for (int i = 0; i < _PB_NX; i++) {
+            y[j] += A[i][j] * tmp[i]; // Accumulate directly into y[j]
+        }
+    }
+
+    #elif defined COLLAPSE
+    // Inizializzazione del vettore y
+    #pragma omp parallel for
+      for (int i = 0; i < ny; i++)
+        y[i] = 0;
+
+    // Inizializza tmp a zero prima del ciclo parallelo
+    #pragma omp parallel for collapse(2) reduction(+:tmp[:_PB_NX])
+    for (int i = 0; i < _PB_NX; i++) {
+        for (int j = 0; j < _PB_NY; j++) {
+            tmp[i] += A[i][j] * x[j]; // Accumulate directly into tmp[i]
+        }
+    }
+    #pragma omp parallel for collapse(2) reduction(+:y[:_PB_NY])
+    for (int j = 0; j < _PB_NY; j++) {
+        for (int i = 0; i < _PB_NX; i++) {
+            y[j] += A[i][j] * tmp[i]; // Accumulate directly into y[j]
+        }
+    }
+
+    #elif defined OPTIMIZED
+    #pragma omp parallel for schedule(static)
+    for (i = 0; i < _PB_NX; i++)
+    {
+        DATA_TYPE tmp_i = 0;
+
+        #pragma omp simd reduction(+:tmp_i)
+        for (j = 0; j < _PB_NY; j++)
+            tmp_i += A[i][j] * x[j]; // row-major, cache-friendly
+
+        tmp[i] = tmp_i; // Alla fine del ciclo j, tmp_i contiene il valore finale per la riga i
+    }
+
+    // Aggiornamento parallelo di y con reduction
+    #pragma omp parallel for schedule(static) reduction(+:y[:_PB_NY]) // inizializza automaticamente le copie private di y a 0
+    for (i = 0; i < _PB_NX; i++)
+    {
+        DATA_TYPE tmp_i = tmp[i];
+        for (j = 0; j < _PB_NY; j++)
+            y[j] += A[i][j] * tmp_i;
+    }
+
+    #elif defined OPTIMIZED_TILING
+    int jj;
+    const int TILE_SIZE = 256;  // dimensione blocco per cache L1/L2
+
+    // --- Calcolo tmp[i] ---
+    #pragma omp parallel for schedule(static)
     for (i = 0; i < _PB_NX; i++)
     {
         DATA_TYPE tmp_i = 0.0;
@@ -60,35 +203,26 @@ static void kernel_atax(int nx, int ny,
         #pragma omp simd reduction(+:tmp_i)
         for (j = 0; j < _PB_NY; j++)
             tmp_i += A[i][j] * x[j];
+
         tmp[i] = tmp_i;
     }
 
-    // inizializza y a zero
-    for (j = 0; j < _PB_NY; j++)
-        y[j] = 0.0;
-
-    // aggiornamento y in parallelo: loop esterno su i, riduzione su y via privati
-    #pragma omp parallel
+    // --- Aggiornamento y con tiling e reduction ---
+    #pragma omp parallel for schedule(static) reduction(+:y[:_PB_NY])
+    for (i = 0; i < _PB_NX; i++)
     {
-        DATA_TYPE y_private[_PB_NY];
-        for (j = 0; j < _PB_NY; j++)
-            y_private[j] = 0.0;
+        DATA_TYPE tmp_i = tmp[i];
 
-        #pragma omp for schedule(static)
-        for (i = 0; i < _PB_NX; i++)
+        for (jj = 0; jj < _PB_NY; jj += TILE_SIZE)
         {
-            DATA_TYPE tmp_i = tmp[i];
-            for (j = 0; j < _PB_NY; j++)
-                y_private[j] += A[i][j] * tmp_i;
-        }
+            int jmax = (jj + TILE_SIZE < _PB_NY) ? (jj + TILE_SIZE) : _PB_NY;
 
-        // somma i privati in y globale
-        #pragma omp critical
-        {
-            for (j = 0; j < _PB_NY; j++)
-                y[j] += y_private[j];
+            #pragma omp simd
+            for (j = jj; j < jmax; j++)
+                y[j] += A[i][j] * tmp_i;
         }
     }
+    #endif
 }
 
 int main(int argc, char **argv)

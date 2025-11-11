@@ -3,7 +3,7 @@ https://github.com/salor02/assignment-HPC/blob/main/assignment-1/OpenMP/linear-a
 ========== teoria =========
 
 
-Versione originale 
+VERSIONE ORIGINALE
 
 PRO:
 Accesso raw-major per creare tmp, ok
@@ -16,6 +16,45 @@ y eseguito nx volte per ogni y[i], questo porta ad avere accessi ripetuti non co
 → nessuna vettorizzazione
 → possibile data race se parallelizziamo y senza controlli ulteriori
 → quando aggiorno y, essendo A trasposta, entro per colonna, pessimo data locality. 
+
+La versione sequenziale rappresenta la baseline del kernel ATAX.
+È funzionalmente corretta ma presenta inefficienze dovute alla scarsa località dei dati e alla mancanza di parallelismo.
+In particolare, il secondo ciclo attraversa la matrice per colonne, causando numerosi cache miss e rendendo la versione adatta solo come riferimento per la valutazione delle ottimizzazioni successive.
+
+Versione PARALLEL
+
+In questa versione è stato introdotto il parallelismo con OpenMP mediante la direttiva parallel for.
+Sebbene il calcolo di tmp[i] sia indipendente e correttamente parallelizzato, l’aggiornamento di y[j] introduce una race condition, poiché diversi thread scrivono simultaneamente sugli stessi elementi dell’array y.
+Molto più lenta della sequenziale → tipico quando fai #pragma omp parallel for su y senza protezioni o reduction: c’è race condition e overhead enorme dei thread, quindi rallenta invece di accelerare.
+
+VERSIONE PARALLEL_NORACE
+
+Semplicemente aggiunto come fatto in classe, u buffer provato ad ogni thread, poi riduzione fatta a mano ma con critical, quindi il tutto diventa sequenziale perdendo il parallelismo, fatta per migliorare (dal punto di vista didattico) l'errore di parallel precedente che prevedeva una data race. 
+
+VERSIONE REDUCTION
+
+VERSIONE OTTIMIZZATA
+
+PRO: 
+il loop esterno su i è parallelizzato, quindi ogni thread calcola una diversa riga del ciclo. 
+ogni thread scrive nel suo my_i, quindi nessuna race condition per tmp[i].
+Il loop su j è vettorizzato (= È un livello di parallelismo interno al core, complementare all’OpenMP che invece usa più core.)
+Riduzione su y, in modo che ognuno veda il suo vettore my_y (problema però quando NY grande) e non ci siano race condition. Faccio poi la riduzione con una sezione critical
+CONTRO: 
+Critical potrebbe diventare bottleneck se NX piccolo e NY grande, potrei usare riduzione 
+y_private è su stack, potrebbe causare overflow, si potrebbe fare allocazione dinamica con malloc, oppure tiling
+Per il prodotto finale, sarebbe meglio usare tiling
+
+VERSIONE COLLAPSE
+
+La versione con collapse(2) fonde i due loop annidati in un unico spazio di iterazione, consentendo un bilanciamento più fine del carico tra thread. Tuttavia, nel kernel ATAX questo approccio riduce la località dei dati nella matrice A, poiché ogni thread accede a elementi non contigui in memoria.
+La versione ottimizzata, invece, mantiene un accesso per righe, più coerente con l’ordine di memorizzazione in C (row-major), e privatizza y per thread, riducendo le contention e sfruttando meglio la cache.
+Pertanto, collapse non porta benefici significativi in questo caso, mentre la versione ottimizzata risulta più efficiente su dataset di grandi dimensioni.
+Anche qui, collapse(2) fa perdere località dei dati → accesso alla matrice A non più per righe → cache miss → tempo alto.
+
+VERSIONE TILING
+
+VERSIONE TARGET
 
 Versione ottimizzata 
 
