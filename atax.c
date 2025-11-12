@@ -222,6 +222,38 @@ static void kernel_atax(int nx, int ny,
                 y[j] += A[i][j] * tmp_i;
         }
     }
+
+    #elif defined TARGET
+    /*inizializza le aree di memoria da passare alla GPU passando A e x e allocando due variabili temporanee tmp e y*/
+    #pragma omp target enter data map(to: A[0:_PB_NX][0:_PB_NY], x[0:_PB_NY]) map(alloc: tmp[0:_PB_NX], y[0:_PB_NY])
+
+  //distribuisce il ciclo for sulla GPU ai vari "team" di thread
+    #pragma omp target teams distribute parallel for
+    for (i = 0; i < _PB_NY; i++)
+      y[i] = 0;
+
+    #pragma omp target teams distribute parallel for
+    for (i = 0; i < _PB_NX; i++) {
+      DATA_TYPE sum = 0;
+      for (j = 0; j < _PB_NY; j++)
+        sum += A[i][j] * x[j];
+      tmp[i] = sum;
+    }
+
+  /*viene invertito il ciclo, da i - j a j - i per fare la trasposta
+  rendendo indipendenti le somme che prima nel ciclo creavano una dipendenza*/
+    #pragma omp target teams distribute parallel for
+    for (j = 0; j < _PB_NY; j++) {
+      DATA_TYPE sum = 0;
+      for (i = 0; i < _PB_NX; i++)
+        sum += A[i][j] * tmp[i];
+      y[j] = sum;
+    }
+  //aggiorna la variabile y, il dato importante, su processore da quella su GPU
+    #pragma omp target update from(y[0:_PB_NY])
+  //elimina le variabili mappate sulla GPU per evitare problemi di memory leak
+    #pragma omp target exit data map(delete: A[0:_PB_NX][0:_PB_NY], x[0:_PB_NY], tmp[0:_PB_NX], y[0:_PB_NY])
+  
     #endif
 }
 
