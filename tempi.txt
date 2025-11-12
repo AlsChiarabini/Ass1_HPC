@@ -31,3 +31,11 @@ atac.c large -> 0.17 ms
 atac.c extra large(10k) -> 0.35 ms 
 atac.c extra large(20k) -> 1.27  ms
 
+**using target**
+atax_target.c mini -> 0.153566 s
+atax_target.c small -> 0.002023 s
+atax_target.c standard -> 0.148777 s
+atax_target.c large -> 0.669948 s
+atax_target.c extra_large (10K) -> 1.562533 s
+atax_target.c extra_large (20K) -> 13.226049 s
+
