@@ -21,6 +21,7 @@ do
         echo "========================"
         make EXT_CFLAGS="-D$mode -D$dataset -DPOLYBENCH_TIME" clean all || { echo "Compilation failed for $mode"; exit 1; }
 
+    done
     # Cattura il tempo
     TIME_OUTPUT=$(./atax_acc)
 
