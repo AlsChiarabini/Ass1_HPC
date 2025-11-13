@@ -27,7 +27,7 @@ do
     # Salva nel CSV
     echo "$mode,$TIME_OUTPUT" >> $OUTPUT_FILE
 
-    echo "Time for mode $mode, with dataset: $dataset = $TIME_OUTPUT s"
+    echo "Time for mode: $mode, with dataset: $dataset = $TIME_OUTPUT s"
 done
 
 echo "========================"
