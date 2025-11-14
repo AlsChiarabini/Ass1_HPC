@@ -67,25 +67,32 @@ This will:
 ## Key Optimization Techniques
 
 ### 1. Parallelization
-
+Adding some "pragma omp parallel for" directives to let compiler know that there is the need to parallelize the loops.
 
 ### 2. Race Condition Elimination
-
+Eliminating race conditions means using a thread-private accumulator for each thread. This will be added to the shared variable only once all the thread computations are done.
 
 ### 3. Memory Access Optimization
-
+Changing the memory access pattern to ensure contiguous memory accesses, improving cache performance during matrix-vector multiplications.
 
 ### 4. SIMD Vectorization
-
+SIMD (Single Instruction, Multiple Data) vectorization allows multiple data points to be processed simultaneously using vector registers. We utilized compiler auto-vectorization features and ensured data alignment for optimal performance.
 
 ### 5. Cache Blocking (Tiling)
-
+Diving the matrix into smaller tiles to improve cache locality during matrix-vector multiplications. Compilers doesn not have an automatic tiling feature, so we manually implemented this optimization.
 
 ### 6. GPU Offloading
+Moving the main computation of the program, in our case the two matrix-vector multiplications, to the GPU using OpenMP target directives. This involves: 
+- copying data to/from the device
+- managing device memory
 
 
 ## Results
-
+Results can be found in the 'plot' directory. Inside this directory is it possible to find two main folders: 
+- gcc
+- clang
+Because we had to compile each version twice in order to effectively use GPU.
+There you can find istograms and speedup plots for each optimization technique showing which optimizations yielded to the major performance improvements.
 
 
 
