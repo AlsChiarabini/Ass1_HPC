@@ -135,16 +135,17 @@ static void kernel_atax(int nx, int ny,
       for (i = 0; i < _PB_NY; i++)
         y[i] = 0;
 
-    #pragma omp parallel for reduction(+:tmp[:_PB_NX]) //forse ridondante, ogni tmp[i] e' indipendente
+    #pragma omp parallel for
     for (int i = 0; i < _PB_NX; i++) {
-        for (int j = 0; j < _PB_NY; j++) {
-            tmp[i] += A[i][j] * x[j]; // Accumulate directly into tmp[i]
-        }
+      tmp[i] = 0; // Inizializza tmp[i] a zero prima del ciclo
+      for (int j = 0; j < _PB_NY; j++) {
+        tmp[i] += A[i][j] * x[j]; // Accumulate directly into tmp[i]
+      }
     }
-    #pragma omp parallel for reduction(+:y[:_PB_NY])
-    for (int j = 0; j < _PB_NY; j++) {
-        for (int i = 0; i < _PB_NX; i++) {
-            y[j] += A[i][j] * tmp[i]; // Accumulate directly into y[j]
+    #pragma omp parallel for reduction(+:y[:_PB_NY]) // reduction esteso su array, inizializza y a 0 automaticamente
+    for (int i = 0; i < _PB_NX; i++) {       // i ESTERNO (Parallelizzato)
+        for (int j = 0; j < _PB_NY; j++) {   // j INTERNO (Row-Major)
+            y[j] += A[i][j] * tmp[i]; 
         }
     }
 
@@ -154,7 +155,6 @@ static void kernel_atax(int nx, int ny,
       for (int i = 0; i < ny; i++)
         y[i] = 0;
 
-    // Inizializza tmp a zero prima del ciclo parallelo
     #pragma omp parallel for collapse(2) reduction(+:tmp[:_PB_NX])
     for (int i = 0; i < _PB_NX; i++) {
         for (int j = 0; j < _PB_NY; j++) {
@@ -162,9 +162,11 @@ static void kernel_atax(int nx, int ny,
         }
     }
     #pragma omp parallel for collapse(2) reduction(+:y[:_PB_NY])
-    for (int j = 0; j < _PB_NY; j++) {
-        for (int i = 0; i < _PB_NX; i++) {
-            y[j] += A[i][j] * tmp[i]; // Accumulate directly into y[j]
+    for (int i = 0; i < _PB_NX; i++) { // Primo loop del collapse
+        for (int j = 0; j < _PB_NY; j++) { // Secondo loop del collapse
+            // L'indice combinato (i, j) è distribuito tra i thread.
+            // La riduzione su y gestisce la dipendenza tra le iterazioni i
+            y[j] += A[i][j] * tmp[i];
         }
     }
 

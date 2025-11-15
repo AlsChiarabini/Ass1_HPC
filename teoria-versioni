@@ -1,0 +1,78 @@
+========== teoria =========
+
+
+VERSIONE ORIGINALE
+
+PRO:
+Accesso raw-major per creare tmp, ok
+
+CONTRO:
+Seriale 
+y eseguito nx volte per ogni y[i], questo porta ad avere accessi ripetuti non contigui alla cache
+→ cache miss (soprattutto con NY grande)
+→ Brutta temporal locality di y
+→ nessuna vettorizzazione
+→ possibile data race se parallelizziamo y senza controlli ulteriori
+→ quando aggiorno y, essendo A trasposta, entro per colonna, pessimo data locality. 
+
+La versione sequenziale rappresenta la baseline del kernel ATAX.
+È funzionalmente corretta ma presenta inefficienze dovute alla scarsa località dei dati e alla mancanza di parallelismo.
+In particolare, il secondo ciclo attraversa la matrice per colonne, causando numerosi cache miss e rendendo la versione adatta solo come riferimento per la valutazione delle ottimizzazioni successive.
+
+Versione PARALLEL
+
+In questa versione è stato introdotto il parallelismo con OpenMP mediante la direttiva parallel for.
+La parallelizzazione iniziale dei loop è corretta, perché ogni thread lavora su un elemento tmp[i] univoco e si lavora con accesso row-major. 
+Avendo scambiato le variabili su cui iterare per parallelizzare su j (avessimo parallelizzato su i quando aggiornavamo le i, si sarebbe creata una data race), abbiamo violato la località spaziale. 
+La riorganizzazione dei loop per parallelizzare su j ha forzato l'accesso agli elementi della matrice A[i][j] per colonna (con j fisso e i che varia). Poiché la matrice è allocata in Row-Major (tipico di C/C++), l'accesso per colonna causa un salto massivo in memoria a ogni iterazione, innescando continui Cache Misses che annullano ogni beneficio del parallelismo.
+Questo è il motivo per cui il tempo peggiora di 5 volte rispetto alla versione sequenziale.
+
+--> come risolvere? 
+    --> o tiling della matrice o calcolo esplicito della traposta di A.
+
+VERSIONE PARALLEL_NORACE
+
+Abbiamo ripristinato l'accesso row-major alla matrice A quando si andavano a calcolare gli elementi y[j]. Per evitare la data race, in cui più thread avrebbero cercato di scrivere sullo stesso elemento y[j], abbiamo aggiunto un vettore y_private ad ogni thread, in modo che ognuno aggiorni il suo.
+Abbiamo poi aggiunto come fatto in classe, una riduzione fatta a mano ma con critical, quindi il tutto diventa sequenziale (affect ahmdal's low) perdendo il parallelismo, fatta per migliorare (dal punto di vista didattico) l'errore di parallel precedente che prevedeva una data race. 
+Questo crea un possibile bottleneck se il vettore y_thread è grande, cioè se ho molti elementi Ny. 
+
+VERSIONE REDUCTION
+
+Il primo loop non richiede reduction perché le iterazioni sono indipendenti. 
+Questa versione mira a ottenere un'ottima scalabilità risolvendo il bottleneck seriale della versione 3, mantenendo al contempo l'efficacia della cache. 
+La clausola reduction infatti rende parallelo l'aggiornamento di y[j]
+
+VERSIONE OTTIMIZZATA
+
+PRO: 
+Nel primo loop vettorizzo il prodotto scalare (= È un livello di parallelismo interno al core, complementare all’OpenMP che invece usa più core.). Questo significa che il processore può eseguire più operazioni in un colpo solo (ad esempio, calcolare il prodotto di 4 o 8 coppie di elementi contemporaneamente) --> FINE-GRAIN
+Ogni thread scrive nel suo my_i, quindi nessuna race condition per tmp[i], è un'operazione thread-safe. Serve poi la reduction per avere il vettore tmp
+Riduzione su y, in modo che ognuno veda il suo vettore my_y (problema però quando NY grande) e non ci siano race condition.
+Usiamo static perché sappiamo che il lavoro da svolgere è sempre uguale, quindi lo dividiamo in parti uguali sui thread. 
+CONTRO: 
+Potremmo trovare ulteriori benefici utilizzando il tiling, per migliorare la riusabilitá dei dati, impatto sulla temporal locality. 
+
+VERSIONE COLLAPSE
+
+L'uso di collpase è pericoloso in atax perché introduce, nel primo ciclo, una data race su tmp, perché il ciclo combinato assegna coppie (i,j) diverse a thread diversi, e più thread cercheranno di aggiornare lo stesso tmp[i] simultaneamente.
+Nel secondo ciclo, non abbiamo una località spaziale ottimale e abbiamo dipendenza di dati. 
+La versione con collapse(2) fonde i due loop annidati in un unico spazio di iterazione, consentendo un bilanciamento più fine del carico tra thread. Tuttavia, nel kernel ATAX questo approccio riduce la località dei dati nella matrice A, poiché ogni thread accede a elementi non contigui in memoria.
+Anche qui, collapse(2) fa perdere località dei dati → accesso alla matrice A non più per righe → cache miss → tempo alto.
+Non esiste un ordine (i,j) o (j,i) che, se collassato, garantisca un accesso contiguo in memoria tra le iterazioni consecutive del loop collassato. Ogni thread, muovendosi rapidamente tra le dimensioni i e j, è probabile che acceda a elementi di A non contigui.
+
+VERSIONE TILING
+
+Località Migliorata: Il blocco di elementi del vettore y (da y[jj] a y[jmax−1]) viene caricato in cache e vi rimane finché tutte le righe i contribuenti (assegnate a quel thread) non lo hanno aggiornato.
+Importante scegliere tile_size simile a L1/L2 cache. Se grande --> cache/conflict, se piccolo --> overhead. 
+Qua abbiamo massimizzato la velocità di calcolo, ma ill problema atax è limitato dalla bandwidth della memoria di trasferimento di dati. 
+
+VERSIONE TARGET
+
+Per quanto riguarda il trasferimento, utilizziamo target enter data e exit data per mappare esplicitamente i dati sulla memoria del dispositivo e deallocarli alla fine, separando il costo di trasferimento dal costo di calcolo.
+Nel primo for, la direttiva target teams distribute parallel for distribuisce il lavoro ai team di thread della GPU. Inoltre mantieniamo l'accesso row-major alla matrice. 
+Nel secondo for, abbiamo optato per l'ordine dei loop (j,i) (esterno su j, interno su i).
+    --> Questa scelta rende il loop esterno su j completamente indipendente (ogni thread calcola un unico y[j]), il che è fondamentale per l'esecuzione massiva su GPU e evita la necessità di complesse clausole di riduzione sul device.
+    --> L'ordine (j,i) forza l'accesso a A[i][j] per colonna sulla matrice Row-Major. Questo accesso non allineato impedisce la Coalescenza degli Accessi alla Memoria , limitando la memory bandwidth e rallentando l'esecuzione.
+Per risolvere ed ottenere la massima performance sul device, bisognerebbe:
+1. trasporre esplicitamente A prima dell'offload
+2. Usare tecniche di tiling sul device per migliorare il riutilizzo dei dati e rendere minimo l'impatto dell'accesso NOT COALESCENCE. 
