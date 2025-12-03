@@ -8,7 +8,9 @@
 #include <math.h>
 #include <cuda.h>
 
-#include <polybench.h>
+extern "C" {
+    #include <polybench.h>
+}
 #include "atax.h"
 
 #define BLOCK_SIZE 256
@@ -139,7 +141,7 @@ int main(int argc, char** argv) {
   CUDA_CHECK(cudaMemcpy(y_h, y_d, sizey, cudaMemcpyDeviceToHost));
 
   /* Print results to prevent DCE (use existing print_array) */
-  print_array(nx, POLYBENCH_ARRAY(y));
+  //print_array(nx, POLYBENCH_ARRAY(y));
 
   /* Free device memory */
   CUDA_CHECK(cudaFree(A_d));
@@ -159,5 +161,5 @@ int main(int argc, char** argv) {
   return 0;
 }
 
-#Per compilare (devo ancora provare) make EXT_CXXFLAGS='-DLARGE_DATASET -DPOLYBENCH_TIME -pg' clean all run
+//Per compilare (devo ancora provare) make EXT_CXXFLAGS='-DLARGE_DATASET -DPOLYBENCH_TIME -pg' clean all run
 
