@@ -1,0 +1,55 @@
+Il progetto ATAX (versione CUDA funzionante con sm_50) è attualmente lento (circa 323 ms) a causa di inefficienze negli accessi alla memoria globale. L'obiettivo è procedere sistematicamente dalla versione base alla versione ottimizzata, concentrandoci in primis sul riutilizzo dei dati e sulla gestione della memoria.
+Fase 1: Ottimizzazione del Trasferimento Dati (Host)
+
+Questa fase riguarda la gestione della memoria sulla CPU e il trasferimento Host ↔ Device.
+1.1 Pinned Memory (Memoria Bloccata)
+
+    Obiettivo: Aumentare la velocità di trasferimento (throughput) dei dati A, x e y tra Host e GPU.
+
+    Modifica: Nel file atax.cu (funzione main), sostituire l'allocazione standard su Host (che viene dalle macro PolyBench) con allocazioni di memoria bloccata.
+
+        Sostituire l'uso delle macro PolyBench per le allocazioni Host con cudaHostAlloc per i puntatori A_h, x_h, y_h e tmp_h.
+
+1.2 Unified Virtual Memory (UVM)
+
+    Obiettivo: Semplificare il codice eliminando le chiamate esplicite a cudaMemcpy e permettendo al runtime di gestire automaticamente la migrazione dei dati.
+
+    Modifica: Creare una versione alternativa (es. atax_uvm.cu) dove i puntatori Host e Device sono unificati utilizzando cudaMallocManaged al posto di cudaMalloc e cudaHostAlloc. Questo elimina tutte le chiamate a cudaMemcpy.
+
+Fase 2: Ottimizzazione della Fase 1 (tmp=A⋅x)
+
+Questa fase (gestita da kernel_tmp) è già coalesced, quindi il guadagno sarà piccolo, ma è necessario per completezza.
+2.1 Constant Memory
+
+    Obiettivo: Sfruttare la memoria ultra-veloce Constant Memory della GPU per il vettore x, che viene letto molte volte.
+
+    Modifiche in main() e kernel_tmp:
+
+        Dichiarare un array globale Device con la qualifier __constant__ (es. x_d_const) in atax.cu.
+
+        In main(), copiare il vettore x in questa memoria costante usando cudaMemcpyToSymbol.
+
+        Modificare kernel_tmp in modo che i thread leggano x da x_d_const.
+
+Fase 3: Ottimizzazione della Fase 2 (y=AT⋅tmp)
+
+Questa è l'ottimizzazione più importante e complessa, che risolverà il problema del non-coalescing e del basso riutilizzo dei dati in kernel_y.
+3.1 Tiling con Shared Memory
+
+    Obiettivo: Trasformare gli accessi lenti per colonna (A[i][j]) in accessi veloci e contigui. Questa è la controparte della tua ottimizzazione OpenMP con Tiling.
+
+    Modifiche in kernel_y:
+
+        Riprogettazione del Kernel: Implementare la logica del Tiling (blocking) utilizzando un parametro di blocco (es., TILE_SIZE = 32).
+
+        Memoria Condivisa: Dichiarare blocchi di memoria __shared__ (es., A_shared[TILE_SIZE][TILE_SIZE]) per memorizzare porzioni (tiles) della matrice A e del vettore tmp.
+
+        Caricamento Coalesced: I thread del blocco devono caricare un blocco di A nella A_shared in modo coalesced (accesso contiguo).
+
+        Sincronizzazione: Utilizzare __syncthreads() per garantire che tutti i dati siano caricati prima di iniziare il calcolo locale sul tile.
+
+3.2 Threading Avanzato per la Riduzione (Facoltativo)
+
+    Obiettivo: Accelerare il calcolo locale dei singoli elementi di y all'interno del blocco.
+
+    Modifica in kernel_y (interno al Tiling): Dopo il calcolo sul tile in Shared Memory, utilizzare le funzioni warp shuffle (se la tua CC è ≥3.0) o un approccio di riduzione sequenziale o riduzione in Shared Memory più elaborato per sommare i risultati parziali di y all'interno del blocco di thread.
