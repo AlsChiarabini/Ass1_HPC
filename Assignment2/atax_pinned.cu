@@ -101,10 +101,15 @@ int main(int argc, char** argv) {
   size_t sizetmp = (size_t)nx * sizeof(DATA_TYPE);
 
   /* Allocate device memory */
-  CUDA_CHECK(cudaMallocManaged((void**)&A_d, sizeA));
-  CUDA_CHECK(cudaMallocManaged((void**)&x_d, sizex));
-  CUDA_CHECK(cudaMallocManaged((void**)&y_d, sizey));
-  CUDA_CHECK(cudaMallocManaged((void**)&tmp_d, sizetmp));
+  CUDA_CHECK(cudaMallocHost((void**)&A_d, sizeA));
+  CUDA_CHECK(cudaMallocHost((void**)&x_d, sizex));
+  CUDA_CHECK(cudaMallocHost((void**)&y_d, sizey));
+  CUDA_CHECK(cudaMallocHost((void**)&tmp_d, sizetmp));
+
+  /* Copy inputs to device */
+  CUDA_CHECK(cudaMemcpy(A_d, A_h, sizeA, cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(x_d, x_h, sizex, cudaMemcpyHostToDevice));
+  /* No need to init y_d or tmp_d (kernels write them) */
 
   /* Launch kernels and measure time with cudaEvent */
   cudaEvent_t start, stop;
@@ -132,14 +137,17 @@ int main(int argc, char** argv) {
   CUDA_CHECK(cudaEventElapsedTime(&milliseconds, start, stop));
   printf("GPU kernels elapsed time: %f ms\n", milliseconds);
 
+  /* Copy result back */
+  CUDA_CHECK(cudaMemcpy(y_h, y_d, sizey, cudaMemcpyDeviceToHost));
+
   /* Print results to prevent DCE (use existing print_array) */
   //print_array(nx, POLYBENCH_ARRAY(y));
 
   /* Free device memory */
-  CUDA_CHECK(cudaFree(A_d));
-  CUDA_CHECK(cudaFree(x_d));
-  CUDA_CHECK(cudaFree(y_d));
-  CUDA_CHECK(cudaFree(tmp_d));
+  CUDA_CHECK(cudaFreeHost(A_d));
+  CUDA_CHECK(cudaFreeHost(x_d));
+  CUDA_CHECK(cudaFreeHost(y_d));
+  CUDA_CHECK(cudaFreeHost(tmp_d));
 
   CUDA_CHECK(cudaEventDestroy(start));
   CUDA_CHECK(cudaEventDestroy(stop));
@@ -152,6 +160,3 @@ int main(int argc, char** argv) {
 
   return 0;
 }
-
-//Per compilare (devo ancora provare) make EXT_CXXFLAGS='-DLARGE_DATASET -DPOLYBENCH_TIME -pg' clean all run
-
