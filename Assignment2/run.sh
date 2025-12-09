@@ -34,17 +34,3 @@ do
         echo "Time for mode=$mode, dataset=$dataset → $TIME_SECONDS s"
     done
 done
-
-echo "========================"
-echo "Computing averages..."
-echo "========================"
-
-# Calcola la media per ogni mode (ignora l'intestazione)
-{
-    echo ""
-    echo "Kernel,Average_Time(s)"
-    awk -F',' 'NR>1 {sum[$1]+=$3; count[$1]++} END {for (m in sum) print m","sum[m]/count[m]}' "$OUTPUT_FILE" | sort
-} >> "$OUTPUT_FILE"
-
-echo "========================"
-echo "All done. Results saved in $OUTPUT_FILE"
