@@ -77,22 +77,10 @@ int main(int argc, char** argv) {
   int nx = NX;
   int ny = NY;
 
-  /* Declare + allocate host arrays using polybench macros */
-  POLYBENCH_2D_ARRAY_DECL(A, DATA_TYPE, NX, NY, nx, ny);
-  POLYBENCH_1D_ARRAY_DECL(x, DATA_TYPE, NY, ny);
-  POLYBENCH_1D_ARRAY_DECL(y, DATA_TYPE, NY, ny);
-  POLYBENCH_1D_ARRAY_DECL(tmp, DATA_TYPE, NX, nx);
+  /* Host pinned memory pointers (sostituisce malloc con cudaMallocHost) */
+  DATA_TYPE *A_h = NULL, *x_h = NULL, *y_h = NULL, *tmp_h = NULL;
 
-  /* Initialize host arrays */
-  init_array(nx, ny, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(x));
-
-  /* Pointers to host raw memory (row-major) */
-  DATA_TYPE* A_h = &POLYBENCH_ARRAY(A)[0][0];
-  DATA_TYPE* x_h = &POLYBENCH_ARRAY(x)[0];
-  DATA_TYPE* y_h = &POLYBENCH_ARRAY(y)[0];
-  DATA_TYPE* tmp_h = &POLYBENCH_ARRAY(tmp)[0];
-
-  /* Device pointers */
+  /* Device pointers (GPU - rimane cudaMalloc) */
   DATA_TYPE *A_d = NULL, *x_d = NULL, *y_d = NULL, *tmp_d = NULL;
 
   size_t sizeA = (size_t)nx * (size_t)ny * sizeof(DATA_TYPE);
@@ -100,11 +88,24 @@ int main(int argc, char** argv) {
   size_t sizey = (size_t)ny * sizeof(DATA_TYPE);
   size_t sizetmp = (size_t)nx * sizeof(DATA_TYPE);
 
-  /* Allocate device memory */
-  CUDA_CHECK(cudaMallocHost((void**)&A_d, sizeA));
-  CUDA_CHECK(cudaMallocHost((void**)&x_d, sizex));
-  CUDA_CHECK(cudaMallocHost((void**)&y_d, sizey));
-  CUDA_CHECK(cudaMallocHost((void**)&tmp_d, sizetmp));
+  /* Alloca pinned HOST (sostituisce malloc - più veloce nei trasferimenti) */
+  CUDA_CHECK(cudaMallocHost((void**)&A_h, sizeA));
+  CUDA_CHECK(cudaMallocHost((void**)&x_h, sizex));
+  CUDA_CHECK(cudaMallocHost((void**)&y_h, sizey));
+  CUDA_CHECK(cudaMallocHost((void**)&tmp_h, sizetmp));
+
+  /* Inizializza dati in pinned memory */
+  for (int i = 0; i < ny; i++)
+    x_h[i] = 1.0;
+  for (int i = 0; i < nx; i++)
+    for (int j = 0; j < ny; j++)
+      A_h[i][j] = 1.0;
+
+  /* Alloca GPU memory (rimane cudaMalloc come nel lab) */
+  CUDA_CHECK(cudaMalloc((void**)&A_d, sizeA));
+  CUDA_CHECK(cudaMalloc((void**)&x_d, sizex));
+  CUDA_CHECK(cudaMalloc((void**)&y_d, sizey));
+  CUDA_CHECK(cudaMalloc((void**)&tmp_d, sizetmp));
 
   /* Copy inputs to device */
   CUDA_CHECK(cudaMemcpy(A_d, A_h, sizeA, cudaMemcpyHostToDevice));
@@ -145,20 +146,20 @@ int main(int argc, char** argv) {
   /* Print results to prevent DCE (use existing print_array) */
   //print_array(nx, POLYBENCH_ARRAY(y));
 
-  /* Free device memory */
-  CUDA_CHECK(cudaFreeHost(A_d));
-  CUDA_CHECK(cudaFreeHost(x_d));
-  CUDA_CHECK(cudaFreeHost(y_d));
-  CUDA_CHECK(cudaFreeHost(tmp_d));
+  /* Free GPU memory */
+  CUDA_CHECK(cudaFree(A_d));
+  CUDA_CHECK(cudaFree(x_d));
+  CUDA_CHECK(cudaFree(y_d));
+  CUDA_CHECK(cudaFree(tmp_d));
+
+  /* Free pinned HOST memory */
+  CUDA_CHECK(cudaFreeHost(A_h));
+  CUDA_CHECK(cudaFreeHost(x_h));
+  CUDA_CHECK(cudaFreeHost(y_h));
+  CUDA_CHECK(cudaFreeHost(tmp_h));
 
   CUDA_CHECK(cudaEventDestroy(start));
   CUDA_CHECK(cudaEventDestroy(stop));
-
-  /* Free host arrays (polybench macros) */
-  POLYBENCH_FREE_ARRAY(A);
-  POLYBENCH_FREE_ARRAY(x);
-  POLYBENCH_FREE_ARRAY(y);
-  POLYBENCH_FREE_ARRAY(tmp);
 
   return 0;
 }
