@@ -13,7 +13,7 @@ extern "C" {
 }
 #include "atax.h"
 
-#define BLOCK_SIZE 256
+#define BLOCK_SIZE 128
 #define THREADS_PER_BLOCK 128
 #define N_STREAMS 4
 #define TILE_SIZE 16

@@ -1,60 +1,63 @@
 #!/bin/bash
-set -e
 
-OUTPUT_FILE="atax_timings.csv"
-echo "Kernel,Dataset,Time(ms)" > "$OUTPUT_FILE"
+# Dataset disponibili
+DATASETS=("MINI" "SMALL" "STANDARD" "LARGE" "EXTRALARGE")
 
-# Mappa MODE → FILE
-declare -A MODE_FILES=(
-    ["BASE"]="atax_base.cu"
-    ["BASE_PINNED"]="atax_base_pinned.cu"
-    ["BASE_UVM"]="atax_base_uvm.cu"
-    ["BASE_CONST"]="atax_base_const.cu"
-    ["OPT_PINNED"]="atax_opt_pinned.cu"
-    ["OPT_UVM"]="atax_opt_uvm.cu"
-    ["OPT_CONST"]="atax_opt_const.cu"
-    ["OPT_TILING"]="atax_opt_tiling.cu"
-    ["OPT_TRANSPOSE"]="atax_opt_trasposta.cu"
-    ["OPT_STREAMS"]="atax_opt_streams.cu"
+# File CUDA da testare
+FILES=(
+"atax_base_const.cu"
+"atax_base_pinned.cu"
+"atax_base_streams.cu"
+"atax_base_uvm.cu"
+"atax_opt_const.cu"
+"atax_opt_pinned.cu"
+"atax_opt_streams.cu"
+"atax_opt_tiling.cu"
+"atax_opt_trasposta.cu"
+"atax_opt_uvm.cu"
 )
 
-DATASETS=("MINI_DATASET" "SMALL_DATASET" "STANDARD_DATASET" "LARGE_DATASET" "EXTRALARGE_DATASET")
+# CSV Output
+OUT="risultati_atax.csv"
+echo "file,dataset,time_ms" > $OUT
 
-for mode in "${!MODE_FILES[@]}"
-do
-    FILE="${MODE_FILES[$mode]}"
-    
-    echo "========================"
-    echo "Running mode: $mode ($FILE)"
-    echo "========================"
+# Backup del Makefile
+cp Makefile Makefile.bak
 
-    for dataset in "${DATASETS[@]}"
-    do
-        echo "------------------------"
-        echo "Using dataset: $dataset"
-        echo "------------------------"
+for FILE in "${FILES[@]}"; do
 
-        make clean
-        make EXERCISE="$FILE" EXT_CFLAGS="-D${dataset} -DPOLYBENCH_TIME" all || { 
-            echo "Compilation failed for $mode $dataset"; 
-            continue
-        }
+    echo ">> Imposto EXERCISE=$FILE"
+    # Modifica EXERCISE nel Makefile
+    sed -i "s/^EXERCISE *= *.*/EXERCISE = $FILE/" Makefile
 
-        # Esegui e cattura il tempo
-        TIME_OUTPUT=$(./atax_cuda 2>&1 | grep "GPU kernels elapsed time" | awk '{print $5}')
+    for DS in "${DATASETS[@]}"; do
+        
+        DATAFLAG=$(echo "$DS" | tr '[:upper:]' '[:lower:]')"_DATASET"
 
-        # Se non trova tempo, segna N/A
-        if [ -z "$TIME_OUTPUT" ]; then
-            TIME_OUTPUT="N/A"
-            echo "No timing found (possible crash/OOM)"
+        echo "   -> Compilo con -D$DATAFLAG"
+
+        # Clean + build
+        make clean >/dev/null 2>&1
+        make EXT_CFLAGS="-D$DATAFLAG" >/dev/null 2>&1
+
+        # Run
+        OUTPUT=$(make run 2>/dev/null)
+
+        # Estrai tempo Polybench (xx.xx ms)
+        TIME=$(echo "$OUTPUT" | grep -Eo '[0-9]+\.[0-9]+ ms' | grep -Eo '[0-9]+\.[0-9]+')
+
+        # Se non trovato
+        if [ -z "$TIME" ]; then
+            TIME="N/A"
         fi
 
-        # Aggiungi al CSV (già in ms)
-        echo "$mode,$dataset,$TIME_OUTPUT" >> "$OUTPUT_FILE"
-
-        echo "Time for mode=$mode, dataset=$dataset → $TIME_OUTPUT ms"
+        echo "$FILE,$DS,$TIME" | tee -a $OUT
     done
+
 done
 
-echo ""
-echo "Benchmark completato! Risultati in: $OUTPUT_FILE"
+# Ripristina Makefile originale
+mv Makefile.bak Makefile
+
+echo "=== COMPLETATO ==="
+echo "Risultati salvati in $OUT"
