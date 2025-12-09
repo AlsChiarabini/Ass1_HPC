@@ -100,10 +100,6 @@ def plot_speedup_curves_per_dataset(df, dataset, compiler_label, output_dir):
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
     plt.close()
 
-
-
-
-
 def main():
     ensure_plots_dir()
     
