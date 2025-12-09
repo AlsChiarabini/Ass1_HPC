@@ -135,7 +135,9 @@ int main(int argc, char** argv) {
 
   float milliseconds = 0;
   CUDA_CHECK(cudaEventElapsedTime(&milliseconds, start, stop));
-  printf("GPU kernels elapsed time: %f ms\n", milliseconds);
+  printf("**************************************************\n");
+  printf("GPU kernels elapsed time (BASE - PINNED): %f ms\n", milliseconds);
+  printf("**************************************************\n");
 
   /* Copy result back */
   CUDA_CHECK(cudaMemcpy(y_h, y_d, sizey, cudaMemcpyDeviceToHost));

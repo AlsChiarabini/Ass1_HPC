@@ -144,16 +144,6 @@ static void init_array(int nx, int ny,
             A[i][j] = ((DATA_TYPE)i * (j + 1)) / nx;
 }
 
-/* Stampa vettore y */
-static void print_array(int ny, DATA_TYPE POLYBENCH_1D(y, NY, ny))
-{
-    for (int i = 0; i < ny; i++) {
-        fprintf(stderr, DATA_PRINTF_MODIFIER, y[i]);
-        if ((i+1) % 20 == 0) fprintf(stderr, "\n");
-    }
-    fprintf(stderr, "\n");
-}
-
 int main(int argc, char** argv) {
     int nx = NX;
     int ny = NY;
@@ -232,7 +222,7 @@ int main(int argc, char** argv) {
     float milliseconds = 0;
     CUDA_CHECK(cudaEventElapsedTime(&milliseconds, start, stop));
     printf("**************************************************\n");
-    printf("GPU kernels elapsed time: %f ms\n", milliseconds);
+    printf("GPU kernels elapsed time (OPT - TILING): %f ms\n", milliseconds);
     printf("**************************************************\n");
 
     /* Copy result back to host */
@@ -257,4 +247,3 @@ int main(int argc, char** argv) {
 
     return 0;
 }
-

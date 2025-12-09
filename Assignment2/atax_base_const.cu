@@ -15,6 +15,9 @@ extern "C" {
 
 #define BLOCK_SIZE 256
 
+/* Vettore di dimenesione massima = a constant memory */
+__constant__ DATA_TYPE x_d_const[8192];
+
 /* Simple CUDA error-check macro */
 #define CUDA_CHECK(call) \
   do { \
@@ -25,14 +28,15 @@ extern "C" {
     } \
   } while (0)
 
-/* Kernel: compute tmp[i] = sum_j A[i][j] * x[j]  (one thread per row i) */
-__global__ void kernel_tmp(const DATA_TYPE* A, const DATA_TYPE* x, DATA_TYPE* tmp, int nx, int ny) {
+/* Kernel: compute tmp[i] = sum_j A[i][j] * x[j]  (one thread per row i)  */
+__global__ void kernel_tmp(const DATA_TYPE* A, DATA_TYPE* tmp, int nx, int ny) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < nx) {
     DATA_TYPE sum = 0.0;
     int row_off = i * ny;
     for (int j = 0; j < ny; ++j) {
-      sum += A[row_off + j] * x[j];
+        // Leggiamo da constant memory
+      sum += A[row_off + j] * x_d_const[j];  
     }
     tmp[i] = sum;
   }
@@ -100,16 +104,21 @@ int main(int argc, char** argv) {
   size_t sizey = (size_t)ny * sizeof(DATA_TYPE);
   size_t sizetmp = (size_t)nx * sizeof(DATA_TYPE);
 
+  /* Consistency check -> se la nostra struttura fitta nel vettore  */
+  if (ny > 8192) {
+    fprintf(stderr, "Error: Vettore troppo grande (ny=%d > 8192)\n", ny);
+    exit(EXIT_FAILURE);
+  }
+
   /* Allocate device memory */
   CUDA_CHECK(cudaMalloc((void**)&A_d, sizeA));
-  CUDA_CHECK(cudaMalloc((void**)&x_d, sizex));
   CUDA_CHECK(cudaMalloc((void**)&y_d, sizey));
   CUDA_CHECK(cudaMalloc((void**)&tmp_d, sizetmp));
 
   /* Copy inputs to device */
   CUDA_CHECK(cudaMemcpy(A_d, A_h, sizeA, cudaMemcpyHostToDevice));
-  CUDA_CHECK(cudaMemcpy(x_d, x_h, sizex, cudaMemcpyHostToDevice));
-  /* No need to init y_d or tmp_d (kernels write them) */
+  /* Copiamo x nella costant memory invece che in quella global */
+  CUDA_CHECK(cudaMemcpyToSymbol(x_d_const, x_h, sizex));
 
   /* Launch kernels and measure time with cudaEvent */
   cudaEvent_t start, stop;
@@ -117,10 +126,10 @@ int main(int argc, char** argv) {
   CUDA_CHECK(cudaEventCreate(&stop));
   CUDA_CHECK(cudaEventRecord(start, 0));
 
-  /* Compute tmp */
+  /* Compute tmp - x is now in constant memory */
   int block = BLOCK_SIZE;
   int grid_tmp = (nx + block - 1) / block;
-  kernel_tmp<<<grid_tmp, block>>>(A_d, x_d, tmp_d, nx, ny);
+  kernel_tmp<<<grid_tmp, block>>>(A_d, tmp_d, nx, ny);
   CUDA_CHECK(cudaGetLastError());
 
   /* Compute y */
@@ -135,7 +144,9 @@ int main(int argc, char** argv) {
 
   float milliseconds = 0;
   CUDA_CHECK(cudaEventElapsedTime(&milliseconds, start, stop));
-  printf("GPU kernels elapsed time: %f ms\n", milliseconds);
+  printf("**************************************************\n");
+  printf("GPU kernels elapsed time (BASE-CONSTS): %f ms\n", milliseconds);
+  printf("**************************************************\n");
 
   /* Copy result back */
   CUDA_CHECK(cudaMemcpy(y_h, y_d, sizey, cudaMemcpyDeviceToHost));
@@ -145,7 +156,6 @@ int main(int argc, char** argv) {
 
   /* Free device memory */
   CUDA_CHECK(cudaFree(A_d));
-  CUDA_CHECK(cudaFree(x_d));
   CUDA_CHECK(cudaFree(y_d));
   CUDA_CHECK(cudaFree(tmp_d));
 

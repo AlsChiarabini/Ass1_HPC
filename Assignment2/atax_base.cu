@@ -84,27 +84,32 @@ int main(int argc, char** argv) {
   POLYBENCH_1D_ARRAY_DECL(tmp, DATA_TYPE, NX, nx);
 
   /* Initialize host arrays */
-  init_array(nx, ny, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(x));
+  init_array(nx, ny, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(x)); // qua inizializzo gli array A e x
 
   /* Pointers to host raw memory (row-major) */
-  DATA_TYPE* A_h = &POLYBENCH_ARRAY(A)[0][0];
-  DATA_TYPE* x_h = &POLYBENCH_ARRAY(x)[0];
-  DATA_TYPE* y_h = &POLYBENCH_ARRAY(y)[0];
-  DATA_TYPE* tmp_h = &POLYBENCH_ARRAY(tmp)[0];
+  DATA_TYPE* A_h = &POLYBENCH_ARRAY(A)[0][0]; // alloco matrice A in memoria continua
+  DATA_TYPE* x_h = &POLYBENCH_ARRAY(x)[0];    // alloco vettore x in memoria continua
+  DATA_TYPE* y_h = &POLYBENCH_ARRAY(y)[0];    // alloco vettore y in memoria continua
+  DATA_TYPE* tmp_h = &POLYBENCH_ARRAY(tmp)[0]; // alloco vettore tmp in memoria continua
 
   /* Device pointers */
-  DATA_TYPE *A_d = NULL, *x_d = NULL, *y_d = NULL, *tmp_d = NULL;
+  DATA_TYPE *A_d = NULL, *x_d = NULL, *y_d = NULL, *tmp_d = NULL; // puntatori in device
 
-  size_t sizeA = (size_t)nx * (size_t)ny * sizeof(DATA_TYPE);
-  size_t sizex = (size_t)ny * sizeof(DATA_TYPE);
-  size_t sizey = (size_t)ny * sizeof(DATA_TYPE);
-  size_t sizetmp = (size_t)nx * sizeof(DATA_TYPE);
+  size_t sizeA = (size_t)nx * (size_t)ny * sizeof(DATA_TYPE); // dimensione matrice A
+  size_t sizex = (size_t)ny * sizeof(DATA_TYPE);            // dimensione vettore x 
+  size_t sizey = (size_t)ny * sizeof(DATA_TYPE);            // dimensione vettore y
+  size_t sizetmp = (size_t)nx * sizeof(DATA_TYPE);          // dimensione vettore tmp
 
   /* Allocate device memory */
-  CUDA_CHECK(cudaMallocManaged((void**)&A_d, sizeA));
-  CUDA_CHECK(cudaMallocManaged((void**)&x_d, sizex));
-  CUDA_CHECK(cudaMallocManaged((void**)&y_d, sizey));
-  CUDA_CHECK(cudaMallocManaged((void**)&tmp_d, sizetmp));
+  CUDA_CHECK(cudaMalloc((void**)&A_d, sizeA));    // alloco matrice A in device --> vedi che sono puntatori a puntatori
+  CUDA_CHECK(cudaMalloc((void**)&x_d, sizex));    // alloco vettore x in device
+  CUDA_CHECK(cudaMalloc((void**)&y_d, sizey));    // alloco vettore y in device
+  CUDA_CHECK(cudaMalloc((void**)&tmp_d, sizetmp)); // alloco vettore tmp in device
+
+  /* Copy inputs to device */
+  CUDA_CHECK(cudaMemcpy(A_d, A_h, sizeA, cudaMemcpyHostToDevice)); // copio solo A ed x, y e tmp li calcolo nei kernel
+  CUDA_CHECK(cudaMemcpy(x_d, x_h, sizex, cudaMemcpyHostToDevice));  // copio vettore x in device
+  /* No need to init y_d or tmp_d (kernels write them) */
 
   /* Launch kernels and measure time with cudaEvent */
   cudaEvent_t start, stop;
@@ -113,24 +118,29 @@ int main(int argc, char** argv) {
   CUDA_CHECK(cudaEventRecord(start, 0));
 
   /* Compute tmp */
-  int block = BLOCK_SIZE;
-  int grid_tmp = (nx + block - 1) / block;
-  kernel_tmp<<<grid_tmp, block>>>(A_d, x_d, tmp_d, nx, ny);
-  CUDA_CHECK(cudaGetLastError());
+  int block = BLOCK_SIZE;                                     // numero di thread per blocco
+  int grid_tmp = (nx + block - 1) / block;                   // calcolo il numero di blocchi necessari
+  kernel_tmp<<<grid_tmp, block>>>(A_d, x_d, tmp_d, nx, ny); // lancio kernel per calcolare tmp (il primo passo)
+  CUDA_CHECK(cudaGetLastError());                               // --> ogni thread calcola una riga di tmp
 
   /* Compute y */
-  int grid_y = (ny + block - 1) / block;
-  kernel_y<<<grid_y, block>>>(A_d, tmp_d, y_d, nx, ny);
-  CUDA_CHECK(cudaGetLastError());
+  int grid_y = (ny + block - 1) / block;                 // calcolo il numero di blocchi necessari
+  kernel_y<<<grid_y, block>>>(A_d, tmp_d, y_d, nx, ny); // lancio kernel per calcolare y (il secondo passo)
+  CUDA_CHECK(cudaGetLastError());                           // --> ogni thread calcola una colonna di y (COLONNA, no coalescence!!!!)
 
   /* Synchronize and stop timer */
-  CUDA_CHECK(cudaDeviceSynchronize());
-  CUDA_CHECK(cudaEventRecord(stop, 0));
+  CUDA_CHECK(cudaDeviceSynchronize());        // ensure all kernels are done
+  CUDA_CHECK(cudaEventRecord(stop, 0));       // record the stop event
   CUDA_CHECK(cudaEventSynchronize(stop));
 
   float milliseconds = 0;
   CUDA_CHECK(cudaEventElapsedTime(&milliseconds, start, stop));
-  printf("GPU kernels elapsed time: %f ms\n", milliseconds);
+  printf("**************************************************\n");
+  printf("GPU kernels elapsed time (BASELINE): %f ms\n", milliseconds);
+  printf("**************************************************\n");
+
+  /* Copy result back */
+  CUDA_CHECK(cudaMemcpy(y_h, y_d, sizey, cudaMemcpyDeviceToHost));  // sul device ho calcolato y, lo copio in y_h in host
 
   /* Print results to prevent DCE (use existing print_array) */
   //print_array(nx, POLYBENCH_ARRAY(y));
@@ -154,4 +164,3 @@ int main(int argc, char** argv) {
 }
 
 //Per compilare (devo ancora provare) make EXT_CXXFLAGS='-DLARGE_DATASET -DPOLYBENCH_TIME -pg' clean all run
-
