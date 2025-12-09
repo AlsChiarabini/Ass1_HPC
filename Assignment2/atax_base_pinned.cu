@@ -96,10 +96,10 @@ int main(int argc, char** argv) {
 
   /* Inizializza dati in pinned memory */
   for (int i = 0; i < ny; i++)
-    x_h[i] = 1.0;
+    x_h[i] = i * M_PI;
   for (int i = 0; i < nx; i++)
     for (int j = 0; j < ny; j++)
-      A_h[i][j] = 1.0;
+      A_h[i * ny + j] = ((DATA_TYPE)i * (j + 1)) / nx;
 
   /* Alloca GPU memory (rimane cudaMalloc come nel lab) */
   CUDA_CHECK(cudaMalloc((void**)&A_d, sizeA));
