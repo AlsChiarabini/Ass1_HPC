@@ -13,7 +13,7 @@ PLOTS_DIR = Path("plots")
 DATASETS = ["MINI", "SMALL", "STANDARD", "LARGE", "EXTRALARGE"]
 
 # Baseline speedup: scegli qualsiasi kernel
-BASELINE_KERNEL = "atax_base_const.cu"
+BASELINE_KERNEL = "atax_base.cu"
 
 sns.set_theme(style="whitegrid", palette="husl")
 

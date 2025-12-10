@@ -17,7 +17,7 @@ BUILD_DIR ?= ./build
 
 # --- Naming del Progetto ATAX ---
 BENCHMARK = atax
-EXERCISE ?= atax.cu
+EXERCISE ?= atax_base.cu
 EXE = $(BENCHMARK)_cuda
 
 # --- File Sorgente ---
