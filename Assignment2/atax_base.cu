@@ -25,7 +25,7 @@ extern "C" {
     } \
   } while (0)
 
-/* Kernel: compute tmp[i] = sum_j A[i][j] * x[j]  (one thread per row i) */
+/* Kernel: compute tmp[i] = sum_j A[i][j] * x[j]  */
 __global__ void kernel_tmp(const DATA_TYPE* A, const DATA_TYPE* x, DATA_TYPE* tmp, int nx, int ny) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < nx) {

@@ -66,9 +66,9 @@ int main(int argc, char** argv) {
     int nx = NX;
     int ny = NY;
 
-    int TILE = nx / N_STREAMS; // numero di RIGHE per ogni stream
+    int TILE = nx / N_STREAMS; // chunk size
 
-    /* Crea gli stream CUDA (uno per ogni chunk) */
+    /* Creiamo gli stream CUDA */
     cudaStream_t streams[N_STREAMS];
     for(int i = 0; i < N_STREAMS; i++) {
         CUDA_CHECK(cudaStreamCreate(&streams[i]));  
@@ -120,18 +120,16 @@ int main(int argc, char** argv) {
   CUDA_CHECK(cudaEventCreate(&stop));
   CUDA_CHECK(cudaEventRecord(start, 0));
 
-  /* PIPELINE: ogni stream processa un chunk di righe di A in parallelo */
+  /*ogni stream processa un chunk di righe di A in parallelo */
   for (int s = 0; s < N_STREAMS; s++) {
-      // Calcola indici per questo chunk (ogni stream = TILE righe)
+      // Calcoliamo indici per questo chunk
       int row_start = s * TILE;
       int row_end = (s + 1) * TILE;
       int chunk_rows = row_end - row_start;
-      
-      // Offset in elementi (A è row-major: A[riga][col] = A[riga * ny + col])
       size_t offset_A = row_start * ny;  // Inizio del chunk nella matrice A
       size_t chunk_size_A = chunk_rows * ny * sizeof(DATA_TYPE);  // Dimensione in byte
       
-      /* ASYNC: Copia chunk di A da host a device (non bloccante!) */
+      /* ASYNC: Copia chunk di A da host a device */
       CUDA_CHECK(cudaMemcpyAsync(
           &A_d[offset_A],      // Destinazione GPU: posizione del chunk
           &A_h[offset_A],      // Sorgente HOST: posizione del chunk
@@ -140,7 +138,7 @@ int main(int argc, char** argv) {
           streams[s]           // Stream dedicato a questo chunk
       ));
       
-      /* KERNEL su questo chunk: calcola tmp per queste righe (non bloccante!) */
+      /* chiamata kernel su un chunk: calcola tmp per queste righe  */
       int grid_tmp = (chunk_rows + BLOCK_SIZE - 1) / BLOCK_SIZE;
       kernel_tmp<<<grid_tmp, BLOCK_SIZE, 0, streams[s]>>>(
           &A_d[offset_A],      // Puntatore al chunk di A su GPU

@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
   size_t sizey = (size_t)ny * sizeof(DATA_TYPE);
   size_t sizetmp = (size_t)nx * sizeof(DATA_TYPE);
 
-  /* Alloca pinned HOST (sostituisce malloc - più veloce nei trasferimenti) */
+  /* Alloca pinned HOST */
   CUDA_CHECK(cudaMallocHost((void**)&A_h, sizeA));
   CUDA_CHECK(cudaMallocHost((void**)&x_h, sizex));
   CUDA_CHECK(cudaMallocHost((void**)&y_h, sizey));
@@ -96,12 +96,12 @@ int main(int argc, char** argv) {
 
   /* Inizializza dati in pinned memory */
   for (int i = 0; i < ny; i++)
-    x_h[i] = i * M_PI;
+    x_h[i] = i;
   for (int i = 0; i < nx; i++)
     for (int j = 0; j < ny; j++)
-      A_h[i * ny + j] = ((DATA_TYPE)i * (j + 1)) / nx;
+      A_h[i * ny + j] = 1.0;
 
-  /* Alloca GPU memory (rimane cudaMalloc come nel lab) */
+  /* Alloca GPU memory */
   CUDA_CHECK(cudaMalloc((void**)&A_d, sizeA));
   CUDA_CHECK(cudaMalloc((void**)&x_d, sizex));
   CUDA_CHECK(cudaMalloc((void**)&y_d, sizey));
